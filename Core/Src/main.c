@@ -65,6 +65,10 @@ void ApagarLEDuC(void){
 	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_SET);
 }
 
+void ToggleLEDuC(void){
+	HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
+
+}
 
 /* USER CODE END 0 */
 
@@ -100,16 +104,22 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
-  StartLORA_PB14();
-
-
-
+  uint8_t mensaje[] = {"HOLA"};
+  uint8_t recibido[30] = {0};
   uint8_t comprobacion = 0;
-  uint8_t cmd[4] = {'A', 'T', '\r', '\n'};
-  comprobacion = ComandoLORA(&huart1, cmd);
-  comprobacion = 0;
-  comprobacion = ConfigLORA(&huart1);
+  uint8_t esEmisor = 1; // 1 si es emisor, 0 si es receptor
 
+
+  ApagarLEDuC();
+
+  if(esEmisor == 1){
+	  comprobacion = ConfigLoRaModule(&huart1, 5, 9);
+	  comprobacion = 0;
+  }
+  else{
+	  comprobacion = ConfigLoRaModule(&huart1, 6, 9);
+	  comprobacion = 0;
+  }
 
   /* USER CODE END 2 */
 
@@ -117,6 +127,28 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if(esEmisor == 1){
+	  	  if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_14) == 1){
+	  		  comprobacion = 0;
+	  		  comprobacion = SendLoRa(&huart1, mensaje, sizeof(mensaje)-1);
+	  		  if(comprobacion == 1){ // Si va bien, el LED hace un blink de 1s
+	  			  EncenderLEDuC();
+	  			  HAL_Delay(1000);
+	  			  ApagarLEDuC();
+	  		  }
+	  		  comprobacion = 0;
+	  		  HAL_Delay(500);
+	  	  }
+	  }
+	  else{
+  		  comprobacion = 0;
+		  comprobacion = RecLoRa(&huart1, recibido, mensaje);
+		  if(comprobacion == 1){ // Si se recibe correctamente, se hace un toggle del led
+			  ToggleLEDuC();
+			  HAL_Delay(1000);
+		  }
+		  comprobacion = 0;
+	  }
 
     /* USER CODE END WHILE */
 
