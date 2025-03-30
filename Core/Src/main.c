@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "olssLoRa.h"
+#include "liquidcrystal_i2c.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,9 +41,14 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+
+int16_t RSSI = 0;
+int16_t SNR = 0;
 
 /* USER CODE END PV */
 
@@ -50,6 +56,7 @@ UART_HandleTypeDef huart1;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -67,7 +74,6 @@ void ApagarLEDuC(void){
 
 void ToggleLEDuC(void){
 	HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
-
 }
 
 /* USER CODE END 0 */
@@ -97,29 +103,33 @@ int main(void)
 
   /* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit *
+  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART1_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  uint8_t mensaje[] = {"HOLA"};
-  uint8_t recibido[30] = {0};
-  uint8_t comprobacion = 0;
-  uint8_t esEmisor = 1; // 1 si es emisor, 0 si es receptor
+  /*
+  HD44780_Init(2);
+  HD44780_Clear();
+  HD44780_Backlight();
+  HD44780_SetCursor(0,0);
+  HD44780_PrintStr("Welcome To");
+  HD44780_SetCursor(0,1);
+  HD44780_PrintStr("CircuitGator HQ");
+*/
 
+  uint8_t recibido[TAM_RX_BUFFER] = {0};
+  uint8_t mensaje[] = {"HOLA_____"}; //El máximo tamaño del mensaje a enviar es de 9 bytes
+
+  uint8_t esEmisor = 0; // 1 si es emisor, 0 si es antena
+
+  if(esEmisor == 1){ ConfigLoRaModule(&huart1, 5, 9);}
+  else{ ConfigLoRaModule(&huart1, 6, 9); }
 
   ApagarLEDuC();
-
-  if(esEmisor == 1){
-	  comprobacion = ConfigLoRaModule(&huart1, 5, 9);
-	  comprobacion = 0;
-  }
-  else{
-	  comprobacion = ConfigLoRaModule(&huart1, 6, 9);
-	  comprobacion = 0;
-  }
 
   /* USER CODE END 2 */
 
@@ -128,26 +138,28 @@ int main(void)
   while (1)
   {
 	  if(esEmisor == 1){
-	  	  if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_14) == 1){
-	  		  comprobacion = 0;
-	  		  comprobacion = SendLoRa(&huart1, mensaje, sizeof(mensaje)-1);
-	  		  if(comprobacion == 1){ // Si va bien, el LED hace un blink de 1s
-	  			  EncenderLEDuC();
-	  			  HAL_Delay(1000);
-	  			  ApagarLEDuC();
-	  		  }
-	  		  comprobacion = 0;
-	  		  HAL_Delay(500);
-	  	  }
+		  //if(1){
+		  if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == 0){
+			  if(SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 6) == 1){
+				  EncenderLEDuC();
+				  while(RecLoRaTIMEOUT(&huart1, recibido) == 0){
+					  SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 6);
+				  }
+				  ApagarLEDuC();
+				  RSSI = getRSSI(recibido);
+				  SNR = getSNR(recibido);
+			  }
+		  }
+		  HAL_Delay(1000);
 	  }
 	  else{
-  		  comprobacion = 0;
-		  comprobacion = RecLoRa(&huart1, recibido, mensaje);
-		  if(comprobacion == 1){ // Si se recibe correctamente, se hace un toggle del led
-			  ToggleLEDuC();
-			  HAL_Delay(1000);
+		  if(RecLoRa(&huart1, recibido) == 1){
+			  EncenderLEDuC();
+			  HAL_Delay(500);
+			  if(SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 5) == 1){
+	  			  ApagarLEDuC();
+			  }
 		  }
-		  comprobacion = 0;
 	  }
 
     /* USER CODE END WHILE */
@@ -156,7 +168,7 @@ int main(void)
 
   } // ------------------- FIN WHILE(1) ------------------------------
   /* USER CODE END 3 */
-} // ----------------------------------------- FIN MAIN ---------------------------------------
+}
 
 /**
   * @brief System Clock Configuration
@@ -197,6 +209,40 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -264,7 +310,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PA0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB14 */
