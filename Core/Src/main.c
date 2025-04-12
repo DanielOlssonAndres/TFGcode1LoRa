@@ -22,7 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "olssLoRa.h"
-#include "liquidcrystal_i2c.h"
+                                                                      //#include "liquidcrystal_i2c.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,6 +49,7 @@ UART_HandleTypeDef huart1;
 
 int16_t RSSI = 0;
 int16_t SNR = 0;
+int16_t distancia = 0;
 
 /* USER CODE END PV */
 
@@ -64,16 +65,85 @@ static void MX_I2C1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-void EncenderLEDuC(void){
-	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_RESET);
+void EncenderLEDuC(void){ HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_RESET); }
+
+void ApagarLEDuC(void){	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_SET); }
+
+void ToggleLEDuC(void){ HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin); }
+
+uint8_t setTipoNodo(void){ // Para decidir si el dispositivo es la antena (devuelve 0) o el emisor (devuelve 1)
+	// Si el botón "KEY" se pulsa rápidamente, será antena. Si se pulsa durante >2s, será emisor
+	EncenderLEDuC();
+	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos a que se pulse el botón "KEY"
+	ApagarLEDuC();
+	HAL_Delay(2000);
+	if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){ // ANTENA
+		EncenderLEDuC(); // 1 blink del led azul indica que se ha seleccionado antena
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		return 0;
+	}
+	else{ // EMISOR
+		EncenderLEDuC(); // 2 blinks del led azul indican que se ha seleccionado emisor
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		EncenderLEDuC();
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		return 1;
+	}
 }
 
-void ApagarLEDuC(void){
-	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_SET);
+void detectRYLR998error(uint8_t codError){ // Mecanismo para indicar que hay un error en la comunicación con el módulo RYLR998
+	if((codError != 0) && (codError != 100)){
+		while(1){ // Si hay un error de comunicación, entramos en un bucle infinito en el que el led azul no para de parpadear
+			ToggleLEDuC();
+			HAL_Delay(250);
+		}
+	}
 }
 
-void ToggleLEDuC(void){
-	HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
+void aplicacionEmisor1(void){
+
+	uint8_t mensajeInicial[] = {"HOLA"}; // Primer mensaje que manda el emisor. Sin datos del RSSI o SNR en él
+	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
+
+	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos hasta que se pulse el botón "KEY"
+	EncenderLEDuC(); // Indicamos que se ha detectado la pulsación
+	HAL_Delay(250);
+	ApagarLEDuC();
+	if(SendLoRaMS(&huart1, mensajeInicial, sizeof(mensajeInicial)-1, 6) == 0){
+	  EncenderLEDuC(); // Indicamos que estamos esperando datos
+	  while(RecLoRaTIMEOUT(&huart1, recibido) == 30){
+		  ApagarLEDuC(); // Indicamos que estamos intentando sincronizarnos con la antena
+		  SendLoRaMS(&huart1, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		  EncenderLEDuC();
+	  }
+	  ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
+	  RSSI = getRSSI(recibido, 1);
+	  SNR = getSNR(recibido, 1);
+	  distancia = getDistancia(RSSI, SNR);
+	}
+    HAL_Delay(1000); // Para evitar errores de falta de sincronización
+}
+
+void aplicacionAntena1(void){
+
+	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
+	uint8_t mensajeConDatos[9] = {0}; // Vector para almacenar el mensaje creado con los datos del RSSI y SNR
+	uint8_t tamMsgCD = 0; // Tamaño del mensaje que contiene datos de RSSI y SNR
+
+	EncenderLEDuC(); // Indicamos que estamos esperando datos
+	while(RecLoRa(&huart1, recibido) != 0){}
+    ApagarLEDuC(); // Indicamos que los datos han sido recibidos
+	RSSI = getRSSI(recibido, 0);
+	SNR = getSNR(recibido, 0);
+	tamMsgCD = construirMsg_RSSI_SNR(mensajeConDatos, RSSI, SNR);
+	HAL_Delay(3000);
+	SendLoRaMS(&huart1, mensajeConDatos, tamMsgCD, 5);
 }
 
 /* USER CODE END 0 */
@@ -111,25 +181,15 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  /*
-  HD44780_Init(2);
-  HD44780_Clear();
-  HD44780_Backlight();
-  HD44780_SetCursor(0,0);
-  HD44780_PrintStr("Welcome To");
-  HD44780_SetCursor(0,1);
-  HD44780_PrintStr("CircuitGator HQ");
-*/
+  uint8_t esEmisor = 0; // 1 si es antena, 0 si es emisor
+  uint8_t errorRYLR998 = 100; // 100 es el estado de inicialización de la variable de gestión de errores de comunicación UART con el módulo RYLR998
 
-  uint8_t recibido[TAM_RX_BUFFER] = {0};
-  uint8_t mensaje[] = {"HOLA_____"}; //El máximo tamaño del mensaje a enviar es de 9 bytes
+  esEmisor = setTipoNodo(); // Se determina si el dispositivo es el emisor o la antena
 
-  uint8_t esEmisor = 0; // 1 si es emisor, 0 si es antena
+  if(esEmisor == 1){ errorRYLR998 = ConfigLoRaModule(&huart1, 5, 9);} // Configuración del emisor
+  else{ errorRYLR998 = ConfigLoRaModule(&huart1, 6, 9); } // Configuración de la antena
 
-  if(esEmisor == 1){ ConfigLoRaModule(&huart1, 5, 9);}
-  else{ ConfigLoRaModule(&huart1, 6, 9); }
-
-  ApagarLEDuC();
+  detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
 
   /* USER CODE END 2 */
 
@@ -137,29 +197,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if(esEmisor == 1){
-		  //if(1){
-		  if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == 0){
-			  if(SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 6) == 1){
-				  EncenderLEDuC();
-				  while(RecLoRaTIMEOUT(&huart1, recibido) == 0){
-					  SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 6);
-				  }
-				  ApagarLEDuC();
-				  RSSI = getRSSI(recibido);
-				  SNR = getSNR(recibido);
-			  }
-		  }
-		  HAL_Delay(1000);
+	  if(esEmisor == 1){ // Código para el emisor
+		  aplicacionEmisor1();
 	  }
-	  else{
-		  if(RecLoRa(&huart1, recibido) == 1){
-			  EncenderLEDuC();
-			  HAL_Delay(500);
-			  if(SendLoRaMS(&huart1, mensaje, sizeof(mensaje)-1, 5) == 1){
-	  			  ApagarLEDuC();
-			  }
-		  }
+	  else{ // Código para la antena
+		  aplicacionAntena1();
 	  }
 
     /* USER CODE END WHILE */
