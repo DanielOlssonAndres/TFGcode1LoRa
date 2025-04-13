@@ -1,5 +1,17 @@
 #include "olssLoRa.h"
 
+void EncenderLEDuC(void){
+	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_RESET);
+}
+
+void ApagarLEDuC(void){
+	HAL_GPIO_WritePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin, GPIO_PIN_SET);
+}
+
+void ToggleLEDuC(void){
+	HAL_GPIO_TogglePin(BLUE_LED_GPIO_Port, BLUE_LED_Pin);
+}
+
 uint8_t ComandoLoRaModule(UART_HandleTypeDef *huart, uint8_t* comando, uint8_t tam){
 
 	  uint8_t RXbuffer[16] = {0}; // Buffer para la recepción de +OK\r\n
@@ -359,7 +371,148 @@ uint8_t construirMsg_RSSI_SNR(uint8_t* mensaje, int16_t RSSI, int16_t SNR){ // D
 int16_t getDistancia(int16_t RSSI, int16_t SNR){
 
 
+
 	return 1;
 }
 
+uint8_t setTipoNodo(void){ // Para decidir si el dispositivo es la antena (devuelve 0) o el emisor (devuelve 1)
+	// Si el botón "KEY" se pulsa rápidamente, será antena. Si se pulsa durante >2s, será emisor
+	EncenderLEDuC();
+	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos a que se pulse el botón "KEY"
+	ApagarLEDuC();
+	HAL_Delay(2000);
+	if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){ // ANTENA
+		EncenderLEDuC(); // 1 blink del led azul indica que se ha seleccionado antena
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		return 0;
+	}
+	else{ // EMISOR
+		EncenderLEDuC(); // 2 blinks del led azul indican que se ha seleccionado emisor
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		EncenderLEDuC();
+		HAL_Delay(500);
+		ApagarLEDuC();
+		HAL_Delay(500);
+		return 1;
+	}
+}
 
+void detectRYLR998error(uint8_t codError){ // Mecanismo para indicar que hay un error en la comunicación con el módulo RYLR998
+	if((codError != 0) && (codError != 100)){
+		while(1){ // Si hay un error de comunicación, entramos en un bucle infinito en el que el led azul no para de parpadear
+			ToggleLEDuC();
+			HAL_Delay(250);
+		}
+	}
+}
+
+void initDisplay(I2C_LCD_HandleTypeDef* lcd1, I2C_HandleTypeDef* hi2c1){
+	lcd1->hi2c = hi2c1; // "Handler"
+	lcd1->address = 0x4E; // Dirección
+	lcd_init(lcd1); // Inicializción a través de la función de la librería
+}
+
+void putStringDisplay(I2C_LCD_HandleTypeDef* lcd, char* linea1, char* linea2){
+    lcd_clear(lcd);
+    lcd_puts(lcd, linea1);
+    lcd_gotoxy(lcd, 0, 1);
+    lcd_puts(lcd, linea2);
+}
+
+void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t RSSI, int16_t SNR, int16_t distancia) {
+
+    char linea1[17];
+    char linea2[17];
+    int16_t RSSIseguro = 0;
+    int16_t SNRseguro = 0;
+
+    // Nos aseguramos de que el RSSI no supere los valores límites
+    if(RSSI > 9999){ RSSIseguro = 9999; }
+    else if(RSSI < -999){ RSSIseguro = -999; }
+    else{RSSIseguro = RSSI; }
+
+    // Nos aseguramos de que el SNR no supere los valores límites
+    if(SNR > 9999){ SNRseguro = 9999; }
+    else if(SNR < -999){ SNRseguro = -999; }
+    else{SNRseguro = SNR; }
+
+    snprintf(linea1, sizeof(linea1), " %4d (%4d)", RSSIseguro, SNRseguro);
+    snprintf(linea2, sizeof(linea2), " Dist: %5d m", distancia);
+
+    putStringDisplay(lcd, linea1, linea2);
+}
+
+uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1){
+
+	uint8_t errorRYLR998 = 100; // 100 es el estado de inicialización de la variable de gestión de errores de comunicación UART con el módulo RYLR998
+	uint8_t es_Emisor = 0; // 1 si es antena, 0 si es emisor
+
+	putStringDisplay(lcd1, "Pulse 1s: ANTENA", "Pulse 2s: EMISOR");
+    es_Emisor = setTipoNodo(); // Se determina si el dispositivo es el emisor o la antena
+
+    if(es_Emisor == 1){ // Configuración del emisor
+	  putStringDisplay(lcd1, "     EMISOR     ", "configurando...");
+	  errorRYLR998 = ConfigLoRaModule(huart1, 5, 9);
+	  putStringDisplay(lcd1, "     EMISOR     ", "---- LISTO -----");
+    }
+	else{ // Configuración de la antena
+	  errorRYLR998 = ConfigLoRaModule(huart1, 6, 9);
+	  putStringDisplay(lcd1, "     ANTENA     ", " funcionando... ");
+	}
+
+	detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
+
+	return es_Emisor;
+}
+
+void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos){
+
+	uint8_t mensajeInicial[] = {"HOLA"}; // Primer mensaje que manda el emisor. Sin datos del RSSI o SNR en él
+	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
+	uint8_t intentos = 0;
+    char nIntentos[17];
+
+	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos hasta que se pulse el botón "KEY"
+	EncenderLEDuC(); // Indicamos que se ha detectado la pulsación
+	intentos = 1;
+	HAL_Delay(250);
+	ApagarLEDuC();
+	putStringDisplay(lcd1, "  Enviando msg  ", "    a ANTENA    ");
+	if(SendLoRaMS(huart1, mensajeInicial, sizeof(mensajeInicial)-1, 6) == 0){
+	  EncenderLEDuC(); // Indicamos que estamos esperando datos
+	  putStringDisplay(lcd1, " Esperando msg  ", "   de ANTENA    ");
+	  while(RecLoRaTIMEOUT(huart1, recibido) == 30){
+		  ApagarLEDuC(); // Indicamos que estamos intentando sincronizarnos con la antena
+		  snprintf(nIntentos, sizeof(nIntentos), "Intento: %4d", intentos++); // creamos el mensaje con el número de intentos de reconexión
+		  putStringDisplay(lcd1, "  Reconectando  ", nIntentos);
+		  SendLoRaMS(huart1, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		  EncenderLEDuC();
+	  }
+	  ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
+	  datos[0] = getRSSI(recibido, 1);
+	  datos[1] = getSNR(recibido, 1);
+	  datos[2] = getDistancia(datos[0], datos[1]);
+	}
+	putDataDisplay(lcd1, datos[0], datos[1], datos[2]); // Mostramos los datos en el Display
+    HAL_Delay(1000); // Para evitar errores de falta de sincronización
+}
+
+void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos){
+
+	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
+	uint8_t mensajeConDatos[9] = {0}; // Vector para almacenar el mensaje creado con los datos del RSSI y SNR
+	uint8_t tamMsgCD = 0; // Tamaño del mensaje que contiene datos de RSSI y SNR
+
+	EncenderLEDuC(); // Indicamos que estamos esperando datos
+	while(RecLoRa(huart1, recibido) != 0){}
+    ApagarLEDuC(); // Indicamos que los datos han sido recibidos
+	datos[0] = getRSSI(recibido, 0);
+	datos[1] = getSNR(recibido, 0);
+	tamMsgCD = construirMsg_RSSI_SNR(mensajeConDatos, datos[0], datos[1]);
+	HAL_Delay(3000);
+	SendLoRaMS(huart1, mensajeConDatos, tamMsgCD, 5);
+}
