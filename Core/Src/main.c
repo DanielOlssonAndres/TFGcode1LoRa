@@ -51,8 +51,6 @@ UART_HandleTypeDef huart1;
 
 I2C_LCD_HandleTypeDef lcd1; // Instancia del Display
 
-int16_t datos = {0}; // datos[0]: RSSI, datos[1]: SNR, datos[2]: distancia
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -104,7 +102,8 @@ int main(void)
 
   initDisplay(&lcd1, &hi2c1); // Inicialización del Display
 
-  uint8_t esEmisor = configAplicacion1(&huart1, &lcd1); // Configuración de los dispositivos
+  float parametros[2]; // Parámetros para el cálculo de la distancia
+  uint8_t esEmisor = configAplicacion1(&huart1, &lcd1, parametros); // Configuración de los dispositivos
 
   /* USER CODE END 2 */
 
@@ -112,8 +111,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if(esEmisor == 1){ aplicacionEmisor1(&huart1, &lcd1, &datos); } // Código de EMISOR
-	  else{ aplicacionAntena1(&huart1, &lcd1, &datos); } // Código de ANTENA
+	  if(esEmisor == 1){ aplicacionEmisor1(&huart1, &lcd1, parametros); } // Código de EMISOR
+	  else{ aplicacionAntena1(&huart1, &lcd1); } // Código de ANTENA
 
     /* USER CODE END WHILE */
 

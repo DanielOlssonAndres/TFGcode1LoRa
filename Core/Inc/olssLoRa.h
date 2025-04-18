@@ -17,8 +17,13 @@ extern "C" {
 #define TAM_MENSAJE_ESPERADO_RX 9 // Para optimizar la memoria
 #define NUM_MUESTRAS 6 // Número de medidas del RSSI y SNR que se toman
 #define TAM_RX_BUFFER NUM_MUESTRAS * (TAM_MENSAJE_ESPERADO_RX + 20) // Tamaño para el buffer de recepción
-
 #define MENSAJE_CON_DATOS 1 // 1: Activar detección de datos en mensaje recibido. 0: Funcionalidad desactivada
+#define SNR_MAX 100 // Limita el valor del SNR a un máximo para evitar errores (suele ser <15)
+#define SNR_MIN -10 // Limita el valor del SNR a un mínimo, para no tner en cuenta medidas con un SNR peor
+#define PARAM_A -23 // Valor de referencia del RSSI a un metro de distancia (por defecto)
+#define PARAM_n 2.57 // Exponente de pérdida para el cálculo de la distancia a partir del RSSI (por defecto)
+#define METROS_CALIBRAR_n 50 // A qué distancia se va a pedir al usuario que se situe para calibrar "n" (60 óptimo para zona de pruebas)
+#define FACTOR_SEGURIDAD_DISTANCIA 2 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
 
 void EncenderLEDuC(void);
 
@@ -46,13 +51,13 @@ int16_t extraerMsg_SNR(uint8_t* mensaje);
 
 int16_t filtradoDatos(int16_t* datos, uint8_t tam);
 
-int16_t getRSSI(uint8_t* bufferRx, uint8_t contarDatosEnMsg);
+int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg, I2C_LCD_HandleTypeDef* lcd);
 
-int16_t getSNR(uint8_t* bufferRx, uint8_t contarDatosEnMsg);
+int16_t getSNR(uint8_t* bufferRx, uint8_t hayDatosEnMsg);
 
 uint8_t construirMsg_RSSI_SNR(uint8_t* mensaje, int16_t RSSI, int16_t SNR);
 
-int16_t getDistancia(int16_t RSSI, int16_t SNR);
+void getDistancia(int16_t* vectorDistancia, int16_t RSSI, int16_t SNR, float A, float n);
 
 uint8_t setTipoNodo(void);
 
@@ -62,13 +67,17 @@ void initDisplay(I2C_LCD_HandleTypeDef* lcd1, I2C_HandleTypeDef* hi2c1);
 
 void putStringDisplay(I2C_LCD_HandleTypeDef* lcd, char* linea1, char* linea2);
 
-void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t RSSI, int16_t SNR, int16_t distancia);
+void floatToChar_n(char* texto, uint8_t tamTexto, float num);
 
-uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1);
+void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t* vectorDistancia, int16_t RSSI, int16_t SNR);
 
-void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos);
+void calibrarParametros(UART_HandleTypeDef *huart, I2C_LCD_HandleTypeDef* lcd1, float* parametros);
 
-void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos);
+uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros);
+
+void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros);
+
+void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1);
 
 // -------------------------------------------------------------------------------
 

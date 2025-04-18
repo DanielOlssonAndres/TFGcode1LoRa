@@ -296,9 +296,10 @@ int16_t filtradoDatos(int16_t* datos, uint8_t tam){
 	return 0; // Para evitar errores y "warnings" en el programa
 }
 
-int16_t getRSSI(uint8_t* bufferRx, uint8_t usarDatosEnMsg){
+int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg, I2C_LCD_HandleTypeDef* lcd){
 	int16_t RSSI[NUM_MUESTRAS + 2] = {0};
 	uint8_t j = 0, i = 0, x = 0;
+
 
 	for(; x < NUM_MUESTRAS ; x++){
 
@@ -320,7 +321,7 @@ int16_t getRSSI(uint8_t* bufferRx, uint8_t usarDatosEnMsg){
 		i++;
 	}
 
-	if((MENSAJE_CON_DATOS == 1) && (usarDatosEnMsg == 1)){ // Si el mensaje contiene datos y además queremos usarlos
+	if((MENSAJE_CON_DATOS == 1) && (hayDatosEnMsg == 1)){ // Si el mensaje contiene datos y además queremos usarlos
 		RSSI[NUM_MUESTRAS] = extraerMsg_RSSI(bufferRx);
 		RSSI[NUM_MUESTRAS + 1] = RSSI[NUM_MUESTRAS]; // El dato se pone 2 veces para darle mayor peso que al resto
 		i = NUM_MUESTRAS + 2;
@@ -330,7 +331,7 @@ int16_t getRSSI(uint8_t* bufferRx, uint8_t usarDatosEnMsg){
 	return filtradoDatos(RSSI, i);
 }
 
-int16_t getSNR(uint8_t* bufferRx, uint8_t usarDatosEnMsg){
+int16_t getSNR(uint8_t* bufferRx, uint8_t hayDatosEnMsg){
 
 	int16_t SNR[NUM_MUESTRAS + 1] = {0};
 	uint8_t j = 0, i = 0, x = 0;
@@ -353,7 +354,7 @@ int16_t getSNR(uint8_t* bufferRx, uint8_t usarDatosEnMsg){
 		i++;
 	}
 
-	if((MENSAJE_CON_DATOS == 1) && (usarDatosEnMsg == 1)){ // Si el mensaje contiene datos y además queremos usarlos
+	if((MENSAJE_CON_DATOS == 1) && (hayDatosEnMsg == 1)){ // Si el mensaje contiene datos y además queremos usarlos
 		SNR[NUM_MUESTRAS] = extraerMsg_SNR(bufferRx);
 		SNR[NUM_MUESTRAS + 1] = SNR[NUM_MUESTRAS]; // El dato se pone 2 veces para darle mayor peso que al resto
 		i = NUM_MUESTRAS + 2;
@@ -368,11 +369,40 @@ uint8_t construirMsg_RSSI_SNR(uint8_t* mensaje, int16_t RSSI, int16_t SNR){ // D
 	return (uint8_t)sprintf((char*)mensaje, "%dY%d", RSSI, SNR);
 }
 
-int16_t getDistancia(int16_t RSSI, int16_t SNR){
+void getDistancia(int16_t* vectorDistancia, int16_t RSSI, int16_t SNR, float A, float n) {
+	// vectorDistancia[0] = Distancia calculada
+	// vectorDistancia[1] = Límite inferior de posible distancia
+	// vectorDistancia[2] = Límite superior de posible distancia
+	// A: Valor de referencia. RSSI a 1m de distancia
+	// n: Exponente de pérdida
 
+    // Si el SNR es muy bajo, o extremadamente alto, se considera que la medida no es fiable
+    if ((SNR < SNR_MIN) || (SNR > SNR_MAX)) {
+        vectorDistancia[0] = -9999; // Devolvemos un valor negativo de distancia para indicar que la medida no es válida
+        vectorDistancia[1] = -9999;
+        vectorDistancia[2] = -9999;
+    }
+    else{
+        // Cálculo de la distancia usando la fórmula: d = 10^(-(RSSI - A) / 10n)
+        float exponente = -((float)RSSI - (float)A) / (10.0f * (float)n);
+        float potencia = powf(10.0f, exponente);
 
+        vectorDistancia[0] = (int16_t)roundf(potencia); // Redondeamos al entero más cercano en metros
 
-	return 1;
+        if(vectorDistancia[0] < 15){ // Si nos encontramos muy cerca, es un caso especial ya que hay más error
+        	vectorDistancia[1] = 0;
+        	vectorDistancia[2] = 15;
+        }
+        else{
+            // Cálculo de la sensibilidad usando la derivada de la ecuación anterior
+            float ln10 = logf(10.0f); // ln(10)
+            float factor = -1.0f / (10.0f * n); // -1/(10n)
+            int16_t sensibilidad = (int16_t)ceilf(fabsf(potencia) * fabsf(ln10) * fabsf(factor)); // Redondeo al mayor
+
+            vectorDistancia[1] = vectorDistancia[0] - FACTOR_SEGURIDAD_DISTANCIA * sensibilidad;
+            vectorDistancia[2] = vectorDistancia[0] + FACTOR_SEGURIDAD_DISTANCIA * sensibilidad;
+        }
+    }
 }
 
 uint8_t setTipoNodo(void){ // Para decidir si el dispositivo es la antena (devuelve 0) o el emisor (devuelve 1)
@@ -423,7 +453,17 @@ void putStringDisplay(I2C_LCD_HandleTypeDef* lcd, char* linea1, char* linea2){
     lcd_puts(lcd, linea2);
 }
 
-void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t RSSI, int16_t SNR, int16_t distancia) {
+void floatToChar_n(char* texto, uint8_t tamTexto, float num){
+	// Esta función esta hecha para funcionar únicamente con numeros <10 y con 2 decimales (para el parámetro "n")
+	uint8_t cifra1, cifra2, cifra3;
+
+	cifra1 = (uint8_t)(num);
+	cifra2 = (uint8_t)((float)(num*10) - (cifra1*10));
+	cifra3 = (uint8_t)((float)(num*100) - (cifra1*100) - (cifra2*10));
+    snprintf(texto, tamTexto, "Param. n: %d.%d%d", cifra1, cifra2, cifra3);
+}
+
+void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t* vectorDistancia, int16_t RSSI, int16_t SNR){
 
     char linea1[17];
     char linea2[17];
@@ -440,13 +480,91 @@ void putDataDisplay(I2C_LCD_HandleTypeDef* lcd, int16_t RSSI, int16_t SNR, int16
     else if(SNR < -999){ SNRseguro = -999; }
     else{SNRseguro = SNR; }
 
-    snprintf(linea1, sizeof(linea1), " %4d (%4d)", RSSIseguro, SNRseguro);
-    snprintf(linea2, sizeof(linea2), " Dist: %5d m", distancia);
+    snprintf(linea1, sizeof(linea1), "%d/%d/%d", vectorDistancia[0], RSSIseguro, SNRseguro);
+    snprintf(linea2, sizeof(linea2), "%d-%d m", vectorDistancia[1], vectorDistancia[2]);
 
     putStringDisplay(lcd, linea1, linea2);
 }
 
-uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1){
+void calibrarParametros(UART_HandleTypeDef *huart, I2C_LCD_HandleTypeDef* lcd1, float* parametros){
+
+	// Para la calibración, primero la ANTENA debe estar lista
+
+	char linea1[17];
+	char linea2[17];
+
+	uint8_t mensajeInicial[] = {"HOLA"}; // Primer mensaje que manda el emisor. Sin datos del RSSI o SNR en él
+	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
+    char nIntentos[17];
+	uint8_t intentos = 0;
+
+	HAL_Delay(1000); // Mostramos los parámetros por defecto
+    snprintf(linea1, sizeof(linea1), "Param. A: %d", PARAM_A);
+    floatToChar_n(linea2, sizeof(linea2), PARAM_n);
+	putStringDisplay(lcd1, linea1, linea2);
+	HAL_Delay(4000); // Preguntamos si se quiere calibrar o usar los parámetros por defecto
+	putStringDisplay(lcd1, "Pulse 1s: NEXT", "Pulse 2s: CONFIG");
+	// Comprobamos elección del usuario
+	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos a que se pulse el botón "KEY"
+	HAL_Delay(2000);
+	if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){ // Se usan parámetros por defecto
+		parametros[0] = PARAM_A;
+		parametros[1] = PARAM_n;
+	}
+	else{ // Se calibran los parámetros manualmente
+		// Comenzamos configurando el parámetro "A" a 1m de distancia
+		putStringDisplay(lcd1, "Aleje los nodos", "1m y pulse KEY");
+		ApagarLEDuC();
+		HAL_Delay(2000); // Evitamos detección erróna del botón
+		while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos a que se pulse el botón "KEY"
+		putStringDisplay(lcd1, "   Obteniendo   ", "    datos...   ");
+		EncenderLEDuC(); // Indicamos que se ha detectado la pulsación
+		intentos = 1;
+		HAL_Delay(250);
+		ApagarLEDuC();
+		SendLoRaMS(huart, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		EncenderLEDuC(); // Indicamos que estamos esperando datos
+		while(RecLoRaTIMEOUT(huart, recibido) == 30){
+			ApagarLEDuC(); // Indicamos que estamos intentando sincronizarnos con la antena
+		    snprintf(nIntentos, sizeof(nIntentos), "Intento: %4d", intentos++); // creamos el mensaje con el número de intentos de reconexión
+		    putStringDisplay(lcd1, "  Reconectando  ", nIntentos);
+		    SendLoRaMS(huart, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		    EncenderLEDuC();
+	    }
+		ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
+		parametros[0] = getRSSI(recibido, 1, lcd1);
+
+		// Configuramos ahora el parámetro "n" a la distancia definida
+	    snprintf(linea2, sizeof(linea2), "%dm y pulse KEY", METROS_CALIBRAR_n);
+		putStringDisplay(lcd1, "Aleje los nodos", linea2);
+		ApagarLEDuC();
+		while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos a que se pulse el botón "KEY
+		putStringDisplay(lcd1, "   Obteniendo   ", "    datos...   ");
+		EncenderLEDuC(); // Indicamos que se ha detectado la pulsación
+		intentos = 1;
+		HAL_Delay(250);
+		ApagarLEDuC();
+		SendLoRaMS(huart, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		EncenderLEDuC(); // Indicamos que estamos esperando datos
+		while(RecLoRaTIMEOUT(huart, recibido) == 30){
+			ApagarLEDuC(); // Indicamos que estamos intentando sincronizarnos con la antena
+		    snprintf(nIntentos, sizeof(nIntentos), "Intento: %4d", intentos++); // creamos el mensaje con el número de intentos de reconexión
+		    putStringDisplay(lcd1, "  Reconectando  ", nIntentos);
+		    SendLoRaMS(huart, mensajeInicial, sizeof(mensajeInicial)-1, 6);
+		    EncenderLEDuC();
+	    }
+		ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
+		parametros[1] = fabs((getRSSI(recibido, 1, lcd1) - parametros[0])/(float)(10 * log10(METROS_CALIBRAR_n)));
+	}
+	// Mostramos los parámetros tras la calibración
+	int16_t paramFormato = parametros[0]; // Ajustamos el formato para evitar errores
+    snprintf(linea1, sizeof(linea1), "Param. A: %d", paramFormato);
+    floatToChar_n(linea2, sizeof(linea2), parametros[1]);
+	putStringDisplay(lcd1, linea1, linea2);
+	HAL_Delay(4000); // Esperamos para que el usuario pueda ver la configuración seleccionada
+}
+
+uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros){
 
 	uint8_t errorRYLR998 = 100; // 100 es el estado de inicialización de la variable de gestión de errores de comunicación UART con el módulo RYLR998
 	uint8_t es_Emisor = 0; // 1 si es antena, 0 si es emisor
@@ -457,23 +575,27 @@ uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd
     if(es_Emisor == 1){ // Configuración del emisor
 	  putStringDisplay(lcd1, "     EMISOR     ", "configurando...");
 	  errorRYLR998 = ConfigLoRaModule(huart1, 5, 9);
+	  detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
+	  putStringDisplay(lcd1, "     EMISOR     ", "configure param.");
+	  HAL_Delay(1000);
+	  calibrarParametros(huart1, lcd1, parametros); // Calibramos los parámetros para el cálculo de la distancia
 	  putStringDisplay(lcd1, "     EMISOR     ", "---- LISTO -----");
     }
 	else{ // Configuración de la antena
 	  errorRYLR998 = ConfigLoRaModule(huart1, 6, 9);
-	  putStringDisplay(lcd1, "     ANTENA     ", " funcionando... ");
+	  detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
 	}
-
-	detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
 
 	return es_Emisor;
 }
 
-void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos){
+void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros){
 
 	uint8_t mensajeInicial[] = {"HOLA"}; // Primer mensaje que manda el emisor. Sin datos del RSSI o SNR en él
 	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
 	uint8_t intentos = 0;
+	int16_t RSSI = 0, SNR = 0;
+	int16_t vectorDistancia[3] = {0}; // 0: distancia, 1: lim_inf, 2: lim_sup
     char nIntentos[17];
 
 	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos hasta que se pulse el botón "KEY"
@@ -493,26 +615,27 @@ void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, 
 		  EncenderLEDuC();
 	  }
 	  ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
-	  datos[0] = getRSSI(recibido, 1);
-	  datos[1] = getSNR(recibido, 1);
-	  datos[2] = getDistancia(datos[0], datos[1]);
+	  RSSI = getRSSI(recibido, 1, lcd1);
+	  SNR = getSNR(recibido, 1);
+	  getDistancia(vectorDistancia, RSSI, SNR, parametros[0], parametros[1]);
 	}
-	putDataDisplay(lcd1, datos[0], datos[1], datos[2]); // Mostramos los datos en el Display
+	putDataDisplay(lcd1, vectorDistancia, RSSI, SNR); // Mostramos los datos en el Display
     HAL_Delay(1000); // Para evitar errores de falta de sincronización
 }
 
-void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, int16_t* datos){
+void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1){
 
 	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
 	uint8_t mensajeConDatos[9] = {0}; // Vector para almacenar el mensaje creado con los datos del RSSI y SNR
 	uint8_t tamMsgCD = 0; // Tamaño del mensaje que contiene datos de RSSI y SNR
+	int16_t RSSI = 0, SNR = 0;
 
 	EncenderLEDuC(); // Indicamos que estamos esperando datos
 	while(RecLoRa(huart1, recibido) != 0){}
     ApagarLEDuC(); // Indicamos que los datos han sido recibidos
-	datos[0] = getRSSI(recibido, 0);
-	datos[1] = getSNR(recibido, 0);
-	tamMsgCD = construirMsg_RSSI_SNR(mensajeConDatos, datos[0], datos[1]);
+	RSSI = getRSSI(recibido, 0, lcd1);
+	SNR = getSNR(recibido, 0);
+	tamMsgCD = construirMsg_RSSI_SNR(mensajeConDatos, RSSI, SNR);
 	HAL_Delay(3000);
 	SendLoRaMS(huart1, mensajeConDatos, tamMsgCD, 5);
 }
