@@ -23,7 +23,7 @@ extern "C" {
 #define PARAM_A -23 // Valor de referencia del RSSI a un metro de distancia (por defecto)
 #define PARAM_n 2.57 // Exponente de pérdida para el cálculo de la distancia a partir del RSSI (por defecto)
 #define METROS_CALIBRAR_n 50 // A qué distancia se va a pedir al usuario que se situe para calibrar "n" (60 óptimo para zona de pruebas)
-#define FACTOR_SEGURIDAD_DISTANCIA 2 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
+#define FACTOR_SEGURIDAD_DISTANCIA 2.5 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
 
 void EncenderLEDuC(void);
 
@@ -51,7 +51,7 @@ int16_t extraerMsg_SNR(uint8_t* mensaje);
 
 int16_t filtradoDatos(int16_t* datos, uint8_t tam);
 
-int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg, I2C_LCD_HandleTypeDef* lcd);
+int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg);
 
 int16_t getSNR(uint8_t* bufferRx, uint8_t hayDatosEnMsg);
 
@@ -75,7 +75,7 @@ void calibrarParametros(UART_HandleTypeDef *huart, I2C_LCD_HandleTypeDef* lcd1, 
 
 uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros);
 
-void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros);
+void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros, int16_t* vectorDistancia);
 
 void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1);
 

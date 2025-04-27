@@ -42,7 +42,6 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-
 I2C_HandleTypeDef hi2c1;
 
 UART_HandleTypeDef huart1;
@@ -102,6 +101,7 @@ int main(void)
 
   initDisplay(&lcd1, &hi2c1); // Inicialización del Display
 
+  int16_t vectorDistancia[3] = {0}; // 0: distancia, 1: lim_inf, 2: lim_sup
   float parametros[2]; // Parámetros para el cálculo de la distancia
   uint8_t esEmisor = configAplicacion1(&huart1, &lcd1, parametros); // Configuración de los dispositivos
 
@@ -111,7 +111,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if(esEmisor == 1){ aplicacionEmisor1(&huart1, &lcd1, parametros); } // Código de EMISOR
+	  if(esEmisor == 1){ aplicacionEmisor1(&huart1, &lcd1, parametros, vectorDistancia); } // Código de EMISOR
 	  else{ aplicacionAntena1(&huart1, &lcd1); } // Código de ANTENA
 
     /* USER CODE END WHILE */
@@ -259,8 +259,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(BLUE_LED_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  /*Configure GPIO pins : PA0 PA1 PA2 PA3
+                           PA4 PA5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
+                          |GPIO_PIN_4|GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);

@@ -234,8 +234,10 @@ int16_t filtradoDatos(int16_t* datos, uint8_t tam){
 
 	// Si hay 3 medidas, se hace la mediana
 	if(tam == 3){
-	    if ((datos[0] >= datos[1] && datos[0] <= datos[2]) || (datos[0] <= datos[1] && datos[0] >= datos[2])){ return datos[0]; }
-	    if ((datos[1] >= datos[0] && datos[1] <= datos[2]) || (datos[1] <= datos[0] && datos[1] >= datos[2])){ return datos[1]; }
+	    if ((datos[0] >= datos[1] && datos[0] <= datos[2]) || (datos[0] <= datos[1] && datos[0] >= datos[2])){
+	    	return datos[0]; }
+	    if ((datos[1] >= datos[0] && datos[1] <= datos[2]) || (datos[1] <= datos[0] && datos[1] >= datos[2])){
+	    	return datos[1]; }
 	    return datos[2];
 	}
 
@@ -278,7 +280,6 @@ int16_t filtradoDatos(int16_t* datos, uint8_t tam){
 	                cont++;
 	            }
 	        }
-
 	        // Si tras el filtrado no quedan datos, usamos una mediana de todos los datos sin filtrar
 	        if(cont == 0){
 	            if(tam % 2 == 0){ // Par
@@ -287,7 +288,6 @@ int16_t filtradoDatos(int16_t* datos, uint8_t tam){
 	                return datos[tam/2];
 	            }
 	        }
-
 	        // Si tras el filtrado sí quedan datos, se hace la media aritmética
 	        return (int16_t)(suma / cont);
 		}
@@ -296,10 +296,10 @@ int16_t filtradoDatos(int16_t* datos, uint8_t tam){
 	return 0; // Para evitar errores y "warnings" en el programa
 }
 
-int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg, I2C_LCD_HandleTypeDef* lcd){
+int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg){
+
 	int16_t RSSI[NUM_MUESTRAS + 2] = {0};
 	uint8_t j = 0, i = 0, x = 0;
-
 
 	for(; x < NUM_MUESTRAS ; x++){
 
@@ -311,11 +311,8 @@ int16_t getRSSI(uint8_t* bufferRx, uint8_t hayDatosEnMsg, I2C_LCD_HandleTypeDef*
 				RSSI[x] = RSSI[x] + ((bufferRx[i] - '0') * (int16_t)pow(10, j));
 				j++;
 			}
-			if(bufferRx[i] == '-'){
-				RSSI[x] = RSSI[x] * (-1);
-			}
+			if(bufferRx[i] == '-'){	RSSI[x] = RSSI[x] * (-1); }
 		}
-
 		j = 0;
 		while(bufferRx[i] != '\r'){i++; }
 		i++;
@@ -376,7 +373,7 @@ void getDistancia(int16_t* vectorDistancia, int16_t RSSI, int16_t SNR, float A, 
 	// A: Valor de referencia. RSSI a 1m de distancia
 	// n: Exponente de pérdida
 
-    // Si el SNR es muy bajo, o extremadamente alto, se considera que la medida no es fiable
+	// Si el SNR es muy bajo, o extremadamente alto, se considera que la medida no es fiable
     if ((SNR < SNR_MIN) || (SNR > SNR_MAX)) {
         vectorDistancia[0] = -9999; // Devolvemos un valor negativo de distancia para indicar que la medida no es válida
         vectorDistancia[1] = -9999;
@@ -532,7 +529,7 @@ void calibrarParametros(UART_HandleTypeDef *huart, I2C_LCD_HandleTypeDef* lcd1, 
 		    EncenderLEDuC();
 	    }
 		ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
-		parametros[0] = getRSSI(recibido, 1, lcd1);
+		parametros[0] = getRSSI(recibido, 1);
 
 		// Configuramos ahora el parámetro "n" a la distancia definida
 	    snprintf(linea2, sizeof(linea2), "%dm y pulse KEY", METROS_CALIBRAR_n);
@@ -554,7 +551,7 @@ void calibrarParametros(UART_HandleTypeDef *huart, I2C_LCD_HandleTypeDef* lcd1, 
 		    EncenderLEDuC();
 	    }
 		ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
-		parametros[1] = fabs((getRSSI(recibido, 1, lcd1) - parametros[0])/(float)(10 * log10(METROS_CALIBRAR_n)));
+		parametros[1] = fabs((getRSSI(recibido, 1) - parametros[0])/(float)(10 * log10(METROS_CALIBRAR_n)));
 	}
 	// Mostramos los parámetros tras la calibración
 	int16_t paramFormato = parametros[0]; // Ajustamos el formato para evitar errores
@@ -589,13 +586,12 @@ uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd
 	return es_Emisor;
 }
 
-void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros){
+void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros, int16_t* vectorDistancia){
 
 	uint8_t mensajeInicial[] = {"HOLA"}; // Primer mensaje que manda el emisor. Sin datos del RSSI o SNR en él
 	uint8_t recibido[TAM_RX_BUFFER] = {0}; // Buffer de recepción de datos
 	uint8_t intentos = 0;
 	int16_t RSSI = 0, SNR = 0;
-	int16_t vectorDistancia[3] = {0}; // 0: distancia, 1: lim_inf, 2: lim_sup
     char nIntentos[17];
 
 	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) != 0){} // Esperamos hasta que se pulse el botón "KEY"
@@ -615,7 +611,7 @@ void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, 
 		  EncenderLEDuC();
 	  }
 	  ApagarLEDuC(); // Indicamos que se han recibido los datos de vuelta
-	  RSSI = getRSSI(recibido, 1, lcd1);
+	  RSSI = getRSSI(recibido, 1);
 	  SNR = getSNR(recibido, 1);
 	  getDistancia(vectorDistancia, RSSI, SNR, parametros[0], parametros[1]);
 	}
@@ -633,7 +629,7 @@ void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1){
 	EncenderLEDuC(); // Indicamos que estamos esperando datos
 	while(RecLoRa(huart1, recibido) != 0){}
     ApagarLEDuC(); // Indicamos que los datos han sido recibidos
-	RSSI = getRSSI(recibido, 0, lcd1);
+	RSSI = getRSSI(recibido, 0);
 	SNR = getSNR(recibido, 0);
 	tamMsgCD = construirMsg_RSSI_SNR(mensajeConDatos, RSSI, SNR);
 	HAL_Delay(3000);
