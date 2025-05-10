@@ -99,11 +99,29 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
+  //---------------------TESTING-------------------------------
+  /*
+  uint16_t vdis[9] = {0};
+  uint16_t pnod[6] = {0, 0, 0, 1000, 1000, 0};
+  uint16_t vloc[3] = {0};
+
+  getDistancia(&vdis[0], -95, 11, -23, 2.57);
+  getDistancia(&vdis[3], -100, 11, -23, 2.57);
+  getDistancia(&vdis[6], -93, 11, -23, 2.57);
+
+  getLocalizacion(pnod, vdis, vloc);
+  */
+  //-----------------------------------------------------------
+
   initDisplay(&lcd1, &hi2c1); // Inicialización del Display
 
-  int16_t vectorDistancia[3] = {0}; // 0: distancia, 1: lim_inf, 2: lim_sup
-  float parametros[2]; // Parámetros para el cálculo de la distancia
-  uint8_t esEmisor = configAplicacion1(&huart1, &lcd1, parametros); // Configuración de los dispositivos
+  int16_t vDistancia3x3[9] = {0}; // 0: distancia1, 1: lim_inf1, 2: lim_sup1, 3: distancia2, etc. (3x3)
+  float vParametros2x3[6]; // Parámetros para el cálculo de la distancia de las 3 antenas. 0: A, 1: n, etc. (2x3)
+  int16_t posNodos2x3[6]; // Posición de los nodos X/Y para las 3 antenas (2x3)
+  uint8_t esEmisor = 0; // 0: ANTENA, 1: EMISOR
+  int16_t vLocalizacion3[3] = {0}; // Vector con las coordenadas finales de la posición. 0: X, 1: Y, 2: ERROR
+
+  esEmisor = configAplicacion2(&huart1, &lcd1, vParametros2x3, posNodos2x3); // Configuración de los dispositivos
 
   /* USER CODE END 2 */
 
@@ -111,8 +129,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if(esEmisor == 1){ aplicacionEmisor1(&huart1, &lcd1, parametros, vectorDistancia); } // Código de EMISOR
-	  else{ aplicacionAntena1(&huart1, &lcd1); } // Código de ANTENA
+	  if(esEmisor == 1){ aplicacionEmisor2(&huart1, &lcd1, vParametros2x3, posNodos2x3, vDistancia3x3, vLocalizacion3); } // Código de EMISOR
+	  else{ aplicacionAntena2(&huart1, &lcd1); } // Código de ANTENA
 
     /* USER CODE END WHILE */
 

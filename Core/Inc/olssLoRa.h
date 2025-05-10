@@ -23,7 +23,16 @@ extern "C" {
 #define PARAM_A -23 // Valor de referencia del RSSI a un metro de distancia (por defecto)
 #define PARAM_n 2.57 // Exponente de pérdida para el cálculo de la distancia a partir del RSSI (por defecto)
 #define METROS_CALIBRAR_n 50 // A qué distancia se va a pedir al usuario que se situe para calibrar "n" (60 óptimo para zona de pruebas)
-#define FACTOR_SEGURIDAD_DISTANCIA 2.5 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
+#define FACTOR_SEGURIDAD_DISTANCIA 2 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
+// Parámetros para trilateración:
+#define NUM_ANTENAS 3 // Número de antenas utilizadas en el sistema
+#define PASO_INICIAL 50 // Tamaño del paso incial para la rutina de búsqueda
+#define TOLERANCIA_PASO 1 // Valor mínimo del tamaño de paso
+#define PENALIZACION 2 // Por cuánto se multiplica la penalización cuando las medidas están fuera del margen de distancia con las antenas
+#define ITERACIONES_MAX 1000 // Máximo número de iteraciones en el proceso de cálculo de la posición
+#define X_INICIAL 100 // Valor inicial de la coordenada X para comenzar a iterar
+#define Y_INICIAL 100 // Valor inicial de la coordenada Y para comenzar a iterar
+
 
 void EncenderLEDuC(void);
 
@@ -78,6 +87,26 @@ uint8_t configAplicacion1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd
 void aplicacionEmisor1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* parametros, int16_t* vectorDistancia);
 
 void aplicacionAntena1(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1);
+
+uint8_t extraerIDantena(uint8_t* mensaje);
+
+void menuDeConfig(I2C_LCD_HandleTypeDef* lcd1, uint8_t indice);
+
+int16_t modificarCifrasConBotones(I2C_LCD_HandleTypeDef* lcd1, char nAntena, char nCoord);
+
+void configCoordenadas(I2C_LCD_HandleTypeDef* lcd1, int16_t* posNodos2x3);
+
+uint8_t configAplicacion2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* vParametros2x3, int16_t* posNodos2x3);
+
+float funcionCoste(int16_t* posNodos2x3, int16_t* vDistancia3x3, float x, float y);
+
+void getLocalizacion(int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3);
+
+float getRMSEdePos(float x, float y, int16_t* posNodos2x3, int16_t* vDistancia3x3);
+
+void aplicacionEmisor2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* vParametros2x3, int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3);
+
+void aplicacionAntena2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1);
 
 // -------------------------------------------------------------------------------
 
