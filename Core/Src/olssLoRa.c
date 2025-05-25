@@ -645,7 +645,7 @@ uint8_t extraerIDantena(uint8_t* mensaje){
 	while(mensaje[i] != ','){ i++; } // Avanzamos hasta la segunda coma
 	i++;
 
-	// Detectamos si lo que se ha mandado es un mensaje normal, o uno para cambiar la dirección de la antena
+	// Detectamos si lo que se ha mandado es un mensaje normal o uno para cambiar la dirección de la antena
 	// Los mensajes para cambiar la dirección de la antena comienzan por '#'. Ej: #1 para dirección 1
 	if(mensaje[i] == '#'){
 		i++;
@@ -685,6 +685,7 @@ int16_t modificarCifrasConBotones(I2C_LCD_HandleTypeDef* lcd1, char nAntena, cha
     snprintf(linea2, sizeof(linea2), "Coord.%c:  0000 m", nCoord);
     putStringDisplay(lcd1, linea1, linea2);
     HAL_Delay(500); // Para evitar fallos por pulsaciones anteriores del botón
+
 	// Pulsando los botones 1, 2, 3 y 4 cambiamos el valor de las cifras de la posición de las antenas
 	// Pulsamos el botón 5 aceptamos y acabamos la configuración
 	while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_5) != 0){ // La configuración acaba al pulsar el botón 5
@@ -789,7 +790,6 @@ uint8_t configAplicacion2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd
 	  errorRYLR998 = ConfigLoRaModule(huart1, 6, 9);
 	  detectRYLR998error(errorRYLR998); // Comprobamos que no haya errores en la comunicación UART con el RYLR998
 	}
-
 	return es_Emisor;
 }
 
@@ -812,20 +812,45 @@ float funcionCoste(int16_t* posNodos2x3, int16_t* vDistancia3x3, float x, float 
     return coste;
 }
 
-float getRMSEdePos(float x, float y, int16_t* posNodos2x3, int16_t* vDistancia3x3){
+float getLocError(float x, float y, int16_t* posNodos2x3, int16_t* vDistancia3x3, uint8_t opcion){
 
 	// Calculamos el error cuadrático medio para la posición. Teniendo en cuenta el método de cálculo usado en esta aplicación
     float sumaError = 0, d_real = 0, error1 = 0, error2 = 0;
+    float mayorError = 0;
     uint8_t i;
 
-    for(i = 0; i < NUM_ANTENAS; i++) {
-        d_real = sqrtf((x - posNodos2x3[i*2])*(x - posNodos2x3[i*2]) + (y - posNodos2x3[i*2+1])*(y - posNodos2x3[i*2+1]));
-        error1 = fabs(d_real - vDistancia3x3[i*3+1]);
-        error2 = fabs(d_real - vDistancia3x3[i*3+2]);
-        sumaError = sumaError + error1 + error2;
+    switch (opcion){
+    case 1: // Error por media aritmética
+        for(i = 0; i < NUM_ANTENAS; i++) {
+            d_real = sqrtf((x - posNodos2x3[i*2])*(x - posNodos2x3[i*2]) + (y - posNodos2x3[i*2+1])*(y - posNodos2x3[i*2+1]));
+            error1 = fabs(d_real - vDistancia3x3[i*3+1]);
+            error2 = fabs(d_real - vDistancia3x3[i*3+2]);
+            sumaError = sumaError + error1 + error2;
+        }
+        return sumaError/(NUM_ANTENAS*2); // 2 errores por cada antena
+    	break;
+    case 2: // Error por mayor valor
+        for(i = 0; i < NUM_ANTENAS; i++) {
+            d_real = sqrtf((x - posNodos2x3[i*2])*(x - posNodos2x3[i*2]) + (y - posNodos2x3[i*2+1])*(y - posNodos2x3[i*2+1]));
+            error1 = fabs(d_real - vDistancia3x3[i*3+1]);
+            error2 = fabs(d_real - vDistancia3x3[i*3+2]);
+            if(mayorError < error1){ mayorError = error1; }
+            if(mayorError < error2){ mayorError = error2; }
+        }
+        return mayorError;
+    	break;
+    case 3: // Error cuadrático medio
+        for(i = 0; i < NUM_ANTENAS; i++) {
+            d_real = sqrtf((x - posNodos2x3[i*2])*(x - posNodos2x3[i*2]) + (y - posNodos2x3[i*2+1])*(y - posNodos2x3[i*2+1]));
+            error1 = fabs(d_real - vDistancia3x3[i*3+1]);
+            error2 = fabs(d_real - vDistancia3x3[i*3+2]);
+            sumaError = sumaError + error1*error1 + error2*error2;
+        }
+        return sqrtf(sumaError/(NUM_ANTENAS*2)); // 2 errores por cada antena
+    	break;
     }
-    return sumaError/(NUM_ANTENAS*2); // 2 errores por cada antena
 
+    return 0;
 }
 
 void getLocalizacion(int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3){
@@ -876,7 +901,7 @@ void getLocalizacion(int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLoc
 	// Guardamos los datos finales en las posiciones correspondientes del vector
 	    vLocalizacion3[0] = (int16_t)x;
 	    vLocalizacion3[1] = (int16_t)y;
-	    vLocalizacion3[2] = (int16_t)getRMSEdePos(x, y, posNodos2x3, vDistancia3x3);
+	    vLocalizacion3[2] = (int16_t)getLocError(x, y, posNodos2x3, vDistancia3x3, TIPO_ERROR);
 }
 
 void aplicacionEmisor2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* vParametros2x3, int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3){
@@ -897,7 +922,7 @@ void aplicacionEmisor2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, 
 	HAL_Delay(250);
 	ApagarLEDuC();
 
-	for(i=0;i<3;i++){
+	for(i=0;i<NUM_ANTENAS;i++){
 		intentos = 1; // Reiniciamos la cuenta de intentos de reconexión
 		// Enviamos mensaje a antena
 		snprintf(texto, sizeof(texto), "  a ANTENA %d  ", i+1);

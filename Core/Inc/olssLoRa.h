@@ -23,7 +23,7 @@ extern "C" {
 #define PARAM_A -23 // Valor de referencia del RSSI a un metro de distancia (por defecto)
 #define PARAM_n 2.57 // Exponente de pérdida para el cálculo de la distancia a partir del RSSI (por defecto)
 #define METROS_CALIBRAR_n 50 // A qué distancia se va a pedir al usuario que se situe para calibrar "n" (60 óptimo para zona de pruebas)
-#define FACTOR_SEGURIDAD_DISTANCIA 2 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
+#define FACTOR_SEGURIDAD_DISTANCIA 2.5 // Factor de seguridad para dar márgenes en el cálculo de la distancia a partir del RSSI
 // Parámetros para trilateración:
 #define NUM_ANTENAS 3 // Número de antenas utilizadas en el sistema
 #define PASO_INICIAL 50 // Tamaño del paso incial para la rutina de búsqueda
@@ -32,6 +32,7 @@ extern "C" {
 #define ITERACIONES_MAX 1000 // Máximo número de iteraciones en el proceso de cálculo de la posición
 #define X_INICIAL 100 // Valor inicial de la coordenada X para comenzar a iterar
 #define Y_INICIAL 100 // Valor inicial de la coordenada Y para comenzar a iterar
+#define TIPO_ERROR 2 // 1: Media aritmética, 2: Máxima desviación de d_mín o d_max, 3: Error cuadrático medio
 
 
 void EncenderLEDuC(void);
@@ -102,7 +103,7 @@ float funcionCoste(int16_t* posNodos2x3, int16_t* vDistancia3x3, float x, float 
 
 void getLocalizacion(int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3);
 
-float getRMSEdePos(float x, float y, int16_t* posNodos2x3, int16_t* vDistancia3x3);
+float getLocError(float x, float y, int16_t* posNodos2x3, int16_t* vDistancia3x3, uint8_t opcion);
 
 void aplicacionEmisor2(UART_HandleTypeDef* huart1, I2C_LCD_HandleTypeDef* lcd1, float* vParametros2x3, int16_t* posNodos2x3, int16_t* vDistancia3x3, int16_t* vLocalizacion3);
 
